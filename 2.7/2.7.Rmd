@@ -7,10 +7,14 @@ output: html_document
 
 ```{r setup, include=FALSE}
 require(dplyr)
+require(knitr)
 require(ggplot2)
+require(sqldf)
+
+opts_chunk$set(fig.align="center")
 ```
 
-## Works referenced
+### Works referenced
 
 Michel, Jean-Baptiste, Yuan Kui Shen, Aviva P. Aiden, Adrian Veres, Matthew K. Gray, The Google Books Team, Joseph P. Pickett, et al. 2011. “Quantitative Analysis of Culture Using Millions of Digitized Books.” Science 331 (6014): 176–82. doi:10.1126/science.1199644.
 
@@ -18,33 +22,78 @@ Pechenick, Eitan Adam, Christopher M. Danforth, and Peter Sheridan Dodds. 2015. 
 
 Google Books Ngram Viewer. http://storage.googleapis.com/books/ngrams/books/datasetsv2.html.
 
-## Background
+### Background
 
 Michel et al. (2011) constructed a corpus emerging from Google’s effort to digitize books. Using the first version of the corpus, which was published in 2009 and contained over 5 million digitized books, the authors analyzed word usage frequency to investigate linguistic changes and cultural trends. Soon the Google Books Corpus became a popular data source for researchers, and a 2nd version of the database was released in 2012.
 
 However, Pechenick, Danforth, and Dodds (2015) warned that researchers need to fully characterize the sampling process of the corpus before using it for drawing broad conclusions. The main issue is that the corpus is library-like, containing one of each book. As a result, an individual, prolific author is able to noticeably insert new phrases into the Google Books lexicon. Moreover, scientific texts constitute an increasingly substantive portion of the corpus throughout the 1900s. In addition, by comparing two versions of the English Fiction datasets, Pechenick et al. found evidence that insufficient filtering was used in producing the first version.
 
-```{r fetch_data}
+Using the Google NGram data, Michel et al. argue that we are forgetting faster and faster. In Fig. 3a, they plot the usage trajectories for three years: 1883, 1910, and 1950. Then, they calculate the “half-life” of each year for all years between 1875 and 1975. They argue that we are forgetting the past faster and faster (see inset of Fig 3a). This calculation was done with Version 1 of the English corpus. In this activity we are going to replicate and extend this result using Version 2 of the corpus.
+
+```{r get_data, echo=FALSE, eval=FALSE}
 setwd("~/Code/css_activities/2.7")
-system("./process_ngrams.py")
+system("./preprocess_ng2.sh")
 ```
 
-## A
+```{r preprocess, echo=FALSE, eval=FALSE} 
+system("./find_years.sh")
+```
 
-In Michel et al.’s original paper (2011), they used the 1st version of the English data set, plotted the frequency of usage of the years “1880”, “1912” and “1973”, and concluded that “we are forgetting our past faster with each passing year” (Fig. 3A, Michel et al.). Replicate the same plot using 1) 1st version of the corpus, English dataset (same as Fig. 3A, Michel et al.)
+### A
 
-## B
+First, we retrieve the data from Google Books, pre-process it to extract our years of interest, and load it into R:
 
-Now replicate the same plot with the 1st version, English fiction dataset.
+```{r 2.7a}
+# Ngrams data
+ng1883 <- read.csv("data/years/1883.tsv", sep="\t", colClasses = c("character", rep("integer", 3)))
+ng1910 <- read.csv("data/years/1910.tsv", sep="\t", colClasses = c("character", rep("integer", 3)))
+ng1950 <- read.csv("data/years/1950.tsv", sep="\t", colClasses = c("character", rep("integer", 3)))
+ng_years <- rbind(ng1883, ng1910, ng1950)
 
-## C
+# Add total counts and clean up data
+total_count <- read.csv("data/total_counts.csv")
+ng_years <- sqldf("SELECT n.ngram, n.year, n.match_count, n.volume_count,
+                  t.match_count as match_total, t.volume_count as volume_total
+                  FROM ng_years n
+                  LEFT JOIN total_count t USING(year)
+                  WHERE NOT n.ngram LIKE '%.%'")
+```
 
-Now replicate the same plot with the 2nd version of the corpus, English dataset.
+### B
 
-## D
-Finally, replicate the same plot with the 2nd version, English fiction dataset.
+We plot the frequencies of these terms in our sample of published books as a function of publication year:
 
-## Discussion
+```{r 2.7b}
+ng_years %>% 
+  filter(year > 1850) %>%
+  group_by(ngram) %>%
+  ggplot(aes(x=year, y=match_count, color=ngram)) + 
+  geom_line() + 
+  scale_color_manual(values=c("blue", "green", "red"))
+```
 
-Describe the differences and similarities between these four plots. Do you agree with Michel et al.’s original interpretation of the observed trend? (Hint: c) and d) should be the same as Figure 16 in Pechenick et al.)
-Now that you have replicated this one finding using different Google Books corpora, choose another linguistic change or cultural phenomena presented in Michel et al.’s original paper. Do you agree with their interpretation in light of the limitations presented in Pechenick et al.? To make your argument stronger, try replicate the same graph using different versions of data set as above.
+At first glance these data seem like they might tell a different story from the earlier wave of Ngrams data. The trend no longer appears to be monotonic!
+
+### C
+
+We can check this against Google's Ngram viewer:
+
+<center><iframe height="500" width="900" src="https://books.google.com/ngrams/graph?content=1883%2C1910%2C1950&year_start=1850&year_end=2008&corpus=15&smoothing=3&share=&direct_url=t1%3B%2C1883%3B%2Cc0%3B.t1%3B%2C1910%3B%2Cc0%3B.t1%3B%2C1950%3B%2Cc0" style="border: 0;"></iframe></center>
+
+Their results seem to match the Michel et al. figure.
+
+### D
+
+To see why, let's try normalizing our year frequencies by the total number of terms in a given year:
+
+```{r 2.7d}
+ng_years %>% 
+  filter(year > 1850) %>%
+  group_by(ngram) %>%
+  ggplot(aes(x=year, y=match_count/match_total, color=ngram)) + 
+  geom_line() + 
+  scale_color_manual(values=c("blue", "green", "red"))
+```
+
+When we do this, we see that the recent increase in raw counts is actually a reduction in the *proportion* of matches. So, we recover the Michel et al./Google Ngram Viewer result. This suggests the Michel et al. paper was using net match proportions, not gross match frequencies.
+
