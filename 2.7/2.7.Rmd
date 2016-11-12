@@ -16,14 +16,16 @@ Michel, Jean-Baptiste, Yuan Kui Shen, Aviva P. Aiden, Adrian Veres, Matthew K. G
 
 Pechenick, Eitan Adam, Christopher M. Danforth, and Peter Sheridan Dodds. 2015. “Characterizing the Google Books Corpus: Strong Limits to Inferences of Socio-Cultural and Linguistic Evolution.” PLoS ONE 10 (10): e0137041. doi:10.1371/journal.pone.0137041.
 
+Google Books Ngram Viewer. http://storage.googleapis.com/books/ngrams/books/datasetsv2.html.
+
 ## Background
 
 Michel et al. (2011) constructed a corpus emerging from Google’s effort to digitize books. Using the first version of the corpus, which was published in 2009 and contained over 5 million digitized books, the authors analyzed word usage frequency to investigate linguistic changes and cultural trends. Soon the Google Books Corpus became a popular data source for researchers, and a 2nd version of the database was released in 2012.
 
-However, Pechenick, Danforth, and Dodds (2015) warned that researchers need to fully characterize the sampling process of the corpus before using it for drawing broad conclusions. The main issue is that the corpus is library-like, containing one of each book. As a result, an individual, prolific author is able to noticeably insert new phrases into the Google Books lexicon. Moreover, scientific texts constitute an increasingly substantive portion of the corpus throughout the 1900s. In addition, by comparing two versions of the English Fiction datasets, Pechenick et al. found evidence that insufficient filtering was used in producing the first version. All of the data needed for activity is available here: http://storage.googleapis.com/books/ngrams/books/datasetsv2.html
+However, Pechenick, Danforth, and Dodds (2015) warned that researchers need to fully characterize the sampling process of the corpus before using it for drawing broad conclusions. The main issue is that the corpus is library-like, containing one of each book. As a result, an individual, prolific author is able to noticeably insert new phrases into the Google Books lexicon. Moreover, scientific texts constitute an increasingly substantive portion of the corpus throughout the 1900s. In addition, by comparing two versions of the English Fiction datasets, Pechenick et al. found evidence that insufficient filtering was used in producing the first version.
 
 ```{r fetch_data}
-setwd("~/Code/css_activities")
+setwd("~/Code/css_activities/2.7")
 system("./process_ngrams.py")
 ```
 

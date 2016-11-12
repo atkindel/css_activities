@@ -1,21 +1,17 @@
 #!/usr/bin/env bash
 
-cd data/clean
+# Clean up directory
+cd data
+rm -rf years
+mkdir -p years
 
-# 1800
-for i in {0..9}
-do
-    awk -F, '$1 == 1880' hf$i.csv >> 1880.csv
-done
+# awk script to find ngrams matching year
+function find_year {
+    echo -e "ngram\tyear\tmatch_count\tvolume_count" > years/$1.tsv
+    awk -F\t -v year=$1 '$1 == year' ng2012.tsv >> years/$1.tsv
+}
 
-# 1910
-for i in {0..9}
-do
-    awk -F, '$1 == 1910' hf$i.csv >> 1910.csv
-done
-
-# 1973
-for i in {0..9}
-do
-    awk -F, '$1 == 1973' hf$i.csv >> 1973.csv
-done
+# Find years of interest
+find_year 1883
+find_year 1910
+find_year 1950
