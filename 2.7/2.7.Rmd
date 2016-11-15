@@ -11,6 +11,7 @@ require(knitr)
 require(ggplot2)
 require(sqldf)
 require(magrittr)
+require(gridExtra)
 
 opts_chunk$set(fig.align="center")
 ```
@@ -250,3 +251,63 @@ half.lives %>%
 ```
 
 When we plot our half lives, the story becomes a little bit more complicated than the original "we forget faster and faster!" explanation. Based on volume mentions, it looks like the half-life of years actually increased during the late 19th century and the first half of the 20th century, with the notable exception of a major dip during World War II (1939-45). Volume-based year mention half-lives decrease rapidly after 1950.
+
+We might have reason to be skeptical about whether an exponential decay function really fits this data:
+
+```{r 2.7g_iii}
+ng_years %>% 
+  filter(ngram == 1840) %>% 
+  filter(year >= 1840) %>% 
+  mutate(match_prop = match_count/match_total) %>% 
+  ggplot(aes(x=year, y=log(match_prop))) + 
+  geom_point() + 
+  geom_smooth(method="lm") ->
+  m1840
+
+ng_years %>% 
+  filter(ngram == 1860) %>% 
+  filter(year >= 1860) %>% 
+  mutate(match_prop = match_count/match_total) %>% 
+  ggplot(aes(x=year, y=log(match_prop))) + 
+  geom_point() + 
+  geom_smooth(method="lm") ->
+  m1860
+
+ng_years %>% 
+  filter(ngram == 1880) %>% 
+  filter(year >= 1880) %>% 
+  mutate(match_prop = match_count/match_total) %>% 
+  ggplot(aes(x=year, y=log(match_prop))) + 
+  geom_point() + 
+  geom_smooth(method="lm") ->
+  m1880
+
+ng_years %>% 
+  filter(ngram == 1900) %>% 
+  filter(year >= 1900) %>% 
+  mutate(match_prop = match_count/match_total) %>% 
+  ggplot(aes(x=year, y=log(match_prop))) + 
+  geom_point() + 
+  geom_smooth(method="lm") ->
+  m1900
+
+ng_years %>% 
+  filter(ngram == 1920) %>% 
+  filter(year >= 1920) %>% 
+  mutate(match_prop = match_count/match_total) %>% 
+  ggplot(aes(x=year, y=log(match_prop))) + 
+  geom_point() + 
+  geom_smooth(method="lm") ->
+  m1920
+
+ng_years %>% 
+  filter(ngram == 1940) %>% 
+  filter(year >= 1940) %>% 
+  mutate(match_prop = match_count/match_total) %>% 
+  ggplot(aes(x=year, y=log(match_prop))) + 
+  geom_point() + 
+  geom_smooth(method="lm") ->
+  m1940
+
+grid.arrange(m1840, m1860, m1880, m1900, m1920, m1940, ncol=3)
+```
