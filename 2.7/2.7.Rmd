@@ -10,6 +10,7 @@ require(dplyr)
 require(knitr)
 require(ggplot2)
 require(sqldf)
+require(magrittr)
 
 opts_chunk$set(fig.align="center")
 ```
@@ -45,10 +46,7 @@ First, we retrieve the data from Google Books, pre-process it to extract our yea
 
 ```{r 2.7a}
 # Ngrams data
-ng1883 <- read.csv("data/years/1883.tsv", sep="\t", colClasses = c("character", rep("integer", 3)))
-ng1910 <- read.csv("data/years/1910.tsv", sep="\t", colClasses = c("character", rep("integer", 3)))
-ng1950 <- read.csv("data/years/1950.tsv", sep="\t", colClasses = c("character", rep("integer", 3)))
-ng_years <- rbind(ng1883, ng1910, ng1950)
+ng_years <- read.csv("data/ngyears.tsv", sep="\t", colClasses = c("character", rep("integer", 3)))
 
 # Add total counts and clean up data
 total_count <- read.csv("data/total_counts.csv")
@@ -65,7 +63,8 @@ We plot the frequencies of these terms in our sample of published books as a fun
 
 ```{r 2.7b}
 ng_years %>% 
-  filter(year > 1850) %>%
+  filter(year > 1875) %>%
+  filter(ngram %in% c('1883', '1910', '1950')) %>%
   group_by(ngram) %>%
   ggplot(aes(x=year, y=match_count, color=ngram)) + 
   geom_line() + 
@@ -88,12 +87,166 @@ To see why, let's try normalizing our year frequencies by the total number of te
 
 ```{r 2.7d}
 ng_years %>% 
+  mutate(match_prop = match_count/match_total) %>%
   filter(year > 1850) %>%
+  filter(ngram %in% c('1883', '1910', '1950')) %>%
   group_by(ngram) %>%
-  ggplot(aes(x=year, y=match_count/match_total, color=ngram)) + 
+  ggplot(aes(x=year, y=match_prop, color=ngram)) + 
   geom_line() + 
   scale_color_manual(values=c("blue", "green", "red"))
 ```
 
 When we do this, we see that the recent increase in raw counts is actually a reduction in the *proportion* of matches. So, we recover the Michel et al./Google Ngram Viewer result. This suggests the Michel et al. paper was using net match proportions, not gross match frequencies.
 
+### E.
+
+The result seems more or less solid.
+
+### F.
+
+Next, we're interested in calculating the "half-life" of a given year. We calculate this value by finding the date in which the proportion of a year's mentions in a given year first falls below half the maximum historical proportion of mentions we observe. The half-life is simply the number of years that have elapsed since the year where the maximum proportion was observed.
+
+```{r 2.7e_i}
+cutoff <- 1800
+# Calculate half life for data on a given year
+half_life <- function(v) {
+  # Get year of maximum proportion observed
+  v %<>% mutate(match_prop = match_count/match_total) %>% filter(year > cutoff)
+  year.max <- v[which.max(v$match_prop),'year']  # Year when maximum proportion observed
+  
+  # Calculate proportionate half life
+  prop.max <- v %>% filter(year == year.max) %>% select(match_prop)  # Max proportion
+  hl.prop <- (prop.max / 2)[1,1]
+  
+  # Determine half life in years
+  v %>%
+    filter(year >= year.max) %>%
+    filter(match_prop <= hl.prop) %>%
+    select(year) %>%
+    slice(1) ->
+    half.year
+  return(half.year - year.max)
+}
+
+# Calculate half life for given ngram
+hl.apply <- function(ngr) {
+  ng_years %>%
+    filter(ngram == ngr) %>%
+    half_life() -> hl
+  return(hl[1,1])
+}
+
+# Get year ngrams
+total_count %>%
+  filter(year > cutoff) %>%
+  select(year) ->
+  yr
+years <- as.character(yr$year)
+
+# Calculate half life for all ngrams
+sapply(years, hl.apply) -> hls
+half.lives <- data.frame(year = names(hls), half.life = hls)
+
+# Plot and examine trend
+half.lives %>%
+  filter(!!half.life) %>%
+  ggplot(aes(x=strtoi(year), y=half.life)) + 
+  geom_point() +
+  geom_smooth(method="loess") +
+  geom_point(data=filter(half.lives, year == '1883'), color="blue", size=4, alpha=0.6) + 
+  geom_point(data=filter(half.lives, year == '1910'), color="green", size=4, alpha=0.6) + 
+  geom_point(data=filter(half.lives, year == '1950'), color="red", size=4, alpha=0.6)
+```
+
+Note that this doesn't look anything like their half-life plot. This could be an Ngrams 2.0 phenomenon, or it could be something else. I'm not sure I buy that inset to begin with. Our data is very noisy in the first half of the 19th century. Substantial outliers (half-life > 80 years) include 1812 (not surprising, since it has a whole war named after it!), 1820 (the Missouri Compromise...?), 1824 (presidential election decided by the House of Representatives for the first and only time in history), and 1830 (publication of the Book of Mormon). Compare this to much more forgettable years like 1776 (HL = 3 years), 1914 (HL = 13 years), or 1945 (HL = 11 years) and a story begins to emerge about why collective memory may be more complicated than these counts initially suggested.
+
+```{r 2.7e_ii}
+ng_years %>% 
+  filter(year > 1800) %>%
+  filter(ngram %in% c('1812', '1820', '1824', '1830', '1883')) %>%
+  group_by(ngram) %>%
+  ggplot(aes(x=year, y=match_count/match_total, color=ngram)) + 
+  geom_line() + 
+  scale_color_manual(values=c("blue", "green", "red", "purple", "orange"))
+```
+
+```{r 2.7e_iii}
+ng_years %>% 
+  filter(year > 1700) %>%
+  filter(ngram %in% c('1776', '1914', '1945', '1950')) %>%
+  group_by(ngram) %>%
+  ggplot(aes(x=year, y=match_count/match_total, color=ngram)) + 
+  geom_line() + 
+  scale_color_manual(values=c("blue", "green", "red", "purple", "orange"))
+```
+
+## G.
+
+Let's look at these counts and "half-lives" by volume, rather than by total matches:
+
+```{r 2.7g_i}
+ng_years %>% 
+  mutate(volume_prop = volume_count/volume_total) %>%
+  filter(year > 1850) %>%
+  filter(ngram %in% c('1883', '1910', '1950')) %>%
+  group_by(ngram) %>%
+  ggplot(aes(x=year, y=volume_prop, color=ngram)) + 
+  geom_line() + 
+  scale_color_manual(values=c("blue", "green", "red"))
+```
+
+Our "decay" plots for the three look somewhat similar, but there are some critical differences. First, observe that the plots are more comparable in scale. Second, notice the discrete spike for the year of interest. The decline in the subsequent year is not nearly as dramatic in more recent years. Also note that the tail of older years flattens out, whereas the tail for more recent years becomes steeper.
+
+```{r 2.7g_ii}
+cutoff <- 1800
+# Calculate half life for data on a given year
+half_life <- function(v) {
+  # Get year of maximum proportion observed
+  v %<>% mutate(volume_prop = volume_count/volume_total) %>% filter(year > cutoff)
+  year.max <- v[which.max(v$volume_prop),'year']  # Year when maximum proportion observed
+  
+  # Calculate proportionate half life
+  prop.max <- v %>% filter(year == year.max) %>% select(volume_prop)  # Max proportion
+  hl.prop <- (prop.max / 2)[1,1]
+  
+  # Determine half life in years
+  v %>%
+    filter(year >= year.max) %>%
+    filter(volume_prop <= hl.prop) %>%
+    select(year) %>%
+    slice(1) ->
+    half.year
+  return(half.year - year.max)
+}
+
+# Calculate half life for given ngram
+hl.apply <- function(ngr) {
+  ng_years %>%
+    filter(ngram == ngr) %>%
+    half_life() -> hl
+  return(hl[1,1])
+}
+
+# Get year ngrams
+total_count %>%
+  filter(year > cutoff) %>%
+  select(year) ->
+  yr
+years <- as.character(yr$year)
+
+# Calculate half life for all ngrams
+sapply(years, hl.apply) -> hls
+half.lives <- data.frame(year = names(hls), half.life = hls)
+
+# Plot and examine trend
+half.lives %>%
+  filter(!!half.life) %>%
+  ggplot(aes(x=strtoi(year), y=half.life)) + 
+  geom_point() +
+  geom_smooth(method="loess") +
+  geom_point(data=filter(half.lives, year == '1883'), color="blue", size=4, alpha=0.6) + 
+  geom_point(data=filter(half.lives, year == '1910'), color="green", size=4, alpha=0.6) + 
+  geom_point(data=filter(half.lives, year == '1950'), color="red", size=4, alpha=0.6)
+```
+
+When we plot our half lives, the story becomes a little bit more complicated than the original "we forget faster and faster!" explanation. Based on volume mentions, it looks like the half-life of years actually increased during the late 19th century and the first half of the 20th century, with the notable exception of a major dip during World War II (1939-45). Volume-based year mention half-lives decrease rapidly after 1950.
