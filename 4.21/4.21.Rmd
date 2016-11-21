@@ -73,6 +73,7 @@ Lewis and Rao provide two useful formulas for calculating $R^{2}$ and $t_{\delta
 
 $$
 R^{2} = \frac{1}{4}(\frac{\delta y}{\hat{\sigma}})^{2} \\
+
 t_{\delta y} = \sqrt{\frac{N}{2}}(\frac{\delta y}{\hat{\sigma}})
 $$
 
