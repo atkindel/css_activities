@@ -33,52 +33,126 @@ Lewis, Randall A., and Justin M. Rao. 2015. “The Unfavorable Economics of Meas
 
 ### Background
 
-Lewis and Rao (2015) vividly illustrate a fundamental statistical limitation of even massive experiments. The paper—which originally had the provocative title “On the Near-impossibility of Measuring the Returns to Advertising”—shows how difficult it is to measure the return on investment of online ads, even with digital experiments involving millions of customers. More generally, the paper clearly shows that it is hard to estimate small treatment effect amidst noisy outcome data. Or stated diffently, the paper shows that estimated treatment effects will have large confidence intervals when the impact-to-standard-deviation ratio ($\frac{\delta y}{\sigma}$) is small. The important general lesson from this paper is that results from experiments with small impact-to-standard-deviation ratio (e.g., ROI of ad campaigns) will be unsatisfying.
+Imagine that you are working as a data scientist at a tech company. Someone from the marketing department asks for your help in evaluating an experiment that they are planning in order to measure the Return on Investment (ROI) for a new online ad campaign. (ROI is defined to be the net profit from the campaign divided by the cost of the campaign. For example, a campaign that had no effect on sales would have an ROI of -100%; a campaign where profits generated were equal to costs would have an ROI of 0; and a campaign where profits generated were double the cost would have an ROI of 200%).
 
-Your challenge will be to write a memo to someone in the marketing department of your company evaluting a planned experiment to measure the ROI of an ad campaign. Your memo should be supported with graphs of the results of computer simulations.
+Before launching their experiment, the marketing department provides you with the following information based on their earlier research (in fact, these values are typical of the real online ad campaigns reported in Lewis and Rao (2015)):
 
-Here’s some background information that you might need. All of these numerical values are typical of the real experiments reported in Lewis and Rao (2015):
-
-* ROI, a key metric for online ad campaigns, is defined to be the net profit from the campaign (gross profit from campaign minus cost of campaign) divided by the cost of the campaign. For example a campaign that had no effect on sales would have an ROI of -100% and a campaign where profits generated were equal to costs would have an ROI of 0.
-* The mean sales per customer is $7 with a standard deviation of $75.
-* The campaign is expected to increase sales by $0.35 per customer which corresponds to an increase in profit of $0.175 per customer. In other words, the gross margin is 50%.
-* The planned size of the experiment is 200,000 people, half in the treatment group and half in the control group.
-* The cost of the campaign is $0.14 per participant.
+* the mean sales per customer is $7 with a standard deviation of $75.
+* the campaign is expected to increase sales by $0.35 per customer which corresponds to an increase in profit of $0.175 per customer.
+* the planned size of the experiment is 200,000 people, half in the treatment group and half in the control group.
+* the cost of the campaign is $0.14 per participant.
 
 ```{r 0}
-# Customer parameters
-sales.m <- 7
-sales.sd <- 75
-ssize <- 200000
+# Customer and campaign parameters
+sales.m <- 7  # Mean sales
+sales.sd <- 75  # Sales SD
+ssize <- 200000  # Customer base
+p.treat <- 0.5  # Even split
+mg.cost <- 0.14  # Campaign cost per customer
+mg.sales <- 0.35  # Marginal campaign effect
+tot.cost <- mg.cost * ssize  # Campaign cost total
+```
 
-# Campaign per-customer margins
-mg.cost <- 0.14
-mg.sales <- 0.35
+### Simulation approach
 
-# Campaign total costs
-tot.cost <- function(mg.cost, ssize) { mg.cost * (ssize / 2) }
+We begin with the example values above. The proposed experiment parameters yield a Cohen's $d$ of `r mg.sales / sales.sd`. This yields a power of around 0.181---much lower than the standard 0.8 To see why this is problematic, we can start by simulating the sampling distribution of the difference in means over many simulated experiments. We randomly assign ($P(treat) = 0.5$) 200k customers to treatment or control, and simulate "observed" sales data with an added effect for treatment $\delta y$:
 
-# ROI function
-roi <- function(g.prof, c.cost) { 
-  net.prof <- g.prof - c.cost
-  net.prof / c.cost 
+```{r 1.1}
+# Define assignments for N customers
+sales <- function(ssize, p.treat) {
+  treat <- rlnorm(ssize * p.treat, mean=sales.m + mg.sales, sd=sales.sd)
+  ctrl <- rlnorm(ssize * p.treat, mean=sales.m, sd=sales.sd)
+  return(list(treat=treat, ctrl=ctrl))
+}
+
+# Generate sales and test difference in means
+sales.diffm <- function(ssize, p.treat) {
+  custs <- lapply(sales(ssize, p.treat), log)
+  tt <- t.test(custs[["ctrl"]], custs[["treat"]])
+  return(c(diffm=tt[["estimate"]][2] - tt[["estimate"]][1],
+           pval=tt[["p.value"]]))
 }
 ```
 
-### Simulation
+```{r 2}
+# Generate empirical sampling distribution of difference in means
+k <- 1000
+dm1.sdist <- replicate(k, sales.diffm(ssize, p.treat))
+dm1.sdist <- data.frame(t(as.matrix(dm1.sdist)))
+dm1.sdist %<>% dplyr::rename(diffm=diffm.mean.of.y) %>% arrange(diffm)
 
-We begin with the example values above. We are interested in the impact-to-standard-deviation ratio ($\frac{\delta y}{\sigma}$) given $\delta y$ = `r mg.sales` and $\hat{\sigma}$ = `r sales.sd`.
+# Determine empirical 95% confidence interval
+lt.e <- dm1.sdist[.025*k,'diffm']
+rt.e <- dm1.sdist[.975*k,'diffm']
+
+# Plot sampling distribution
+dm1.sdist %>%
+  ggplot(aes(x = diffm)) +
+  geom_density() + 
+  geom_vline(xintercept=mg.sales, color="tomato", linetype="dashed") + 
+  geom_vline(xintercept=lt.e, linetype="dashed", color="purple") + 
+  geom_vline(xintercept=rt.e, linetype="dashed", color="purple")
+```
+
+The first thing we notice is that while our distribution collapses around the correct difference in means, the confidence interval on our estimate suggests that our sample size is not large enough to make a meaningful claim about the effectiveness of the experiment
+
+```{r 2.1}
+# Plot estimated difference in means against p value of t-test
+dm1.sdist %>%
+  ggplot(aes(x=diffm, y=pval)) + 
+  geom_point(alpha=0.1) + 
+  geom_vline(xintercept=mg.sales, color="tomato", linetype="dashed") + 
+  geom_hline(yintercept=0.05, color="dodgerblue", linetype="dashed")
+```
+
+Perhaps more troublingly, if we *were* to find a significant effect, we would substantially overestimate the effect size. To achieve $p < .05$ we need to observe an effect size of around .66, which is almost twice the real effect size.
+
+This does not seem to be a good use of our resources: this experiment would cost $`r tot.cost` to run, and it's inconclusive at best---and misleading at worst! What would it take to fix the experiment? Let's try adjusting the sample size of our experiment by a factor of 10, to reach 2 million customers:
+
+```{r 3}
+# Generate empirical sampling distribution of difference in means
+k <- 500
+ssize <- 2000000
+dm1.sdist <- replicate(k, sales.diffm(ssize, p.treat))
+dm1.sdist <- data.frame(t(as.matrix(dm1.sdist)))
+dm1.sdist %<>% dplyr::rename(diffm=diffm.mean.of.y) %>% arrange(diffm)
+
+# Determine empirical 95% confidence interval
+lt.e <- dm1.sdist[.025*k,'diffm']
+rt.e <- dm1.sdist[.975*k,'diffm']
+
+# Plot sampling distribution
+dm1.sdist %>%
+  ggplot(aes(x = diffm)) +
+  geom_density() + 
+  geom_vline(xintercept=mg.sales, color="tomato", linetype="dashed") + 
+  geom_vline(xintercept=lt.e, linetype="dashed", color="purple") + 
+  geom_vline(xintercept=rt.e, linetype="dashed", color="purple")
+```
+
+```{r 3.1}
+# Plot estimated difference in means against p value of t-test
+dm1.sdist %>%
+  ggplot(aes(x=diffm, y=pval)) + 
+  geom_point(alpha=0.1) + 
+  geom_vline(xintercept=mg.sales, color="tomato", linetype="dashed") + 
+  geom_hline(yintercept=0.05, color="dodgerblue", linetype="dashed")
+```
+
+We obtain a 95% confidence interval $\delta y \in$ [`r lt.e`, `r rt.e`]. So the tenfold increase in our sample size may have been overkill-- and $`r tot.cost` may be a bit more than we're willing to spend on a single advertising campaign. Fortunately, we can analytically determine what sample size we would need to confidently determine whether our experiment reached its expected effect.
+
+### Analytical approach
+
+We are interested in the impact-to-standard-deviation ratio ($\frac{\delta y}{\sigma}$) given $\delta y$ = `r mg.sales` and $\hat{\sigma}$ = `r sales.sd`.
 
 Lewis and Rao provide two useful formulas for calculating $R^{2}$ and $t_{\delta y}$:
 
 $$
 R^{2} = \frac{1}{4}(\frac{\delta y}{\hat{\sigma}})^{2} \\
-
 t_{\delta y} = \sqrt{\frac{N}{2}}(\frac{\delta y}{\hat{\sigma}})
 $$
 
 ```{r 1}
-itsd <- function(dy, s) { dy / s }
 rsq <- function(dy, s) { 0.25 * (dy / s) ^ 2 }
 t.dy <- function(n, dy, s) { sqrt(n / 2) * (dy / s) }
 ```
@@ -88,75 +162,7 @@ $\frac{\delta y}{\sigma}$ = `r mg.sales / sales.sd`;
 $R^{2}$ = `r rsq(mg.sales, sales.sd)`; and    
 $t_{\delta y}$ = `r t.dy(ssize, mg.sales, sales.sd)`.
 
-To put it in different terms, the low $R^{2}$ (or more pertinently, the low impact-to-standard-deviation ratio) means that assignment to treatment explains very little of the variance in sales. To have any hope of detecting a significant (say, $p < .05$) effect in the difference in means between our experimental groups, we are going to need to either drive up our sample size or find some way of adjusting either the effectiveness of our advertising or the variance in our marginal sales. We'll return to an analytic power analysis subsequently, but first, it might be helpful to simulate exactly why this is a problem.
-
-To suss out the consequences of our small $R^{2}$ visually, we can simulate the sampling distribution of the difference in means over many simulated experiments with a fairly large (by most standards) sample size. We randomly assign ($P(treat) = 0.5$) 200k customers to treatment or control, and simulate "observed" sales data with an added effect for treatment $\delta y$:
-
-```{r 2}
-# Define assignments for N customers
-gen_custs <- function(ssize) {
-  ctrl <- rep(0, ssize/2)
-  treat <- rep(1, ssize/2)
-  assns <- c(ctrl, treat)
-  custs <- data.frame(treat = c(ctrl, treat))
-}
-custs <- gen_custs(ssize)
-
-# Simulate sales and calculate diff in means
-sales.diffm <- function(n, custs) {
-  custs %>%
-    mutate(sales = rnorm(n, mean=sales.m + treat * mg.sales, sd=sales.sd)) %>%
-    group_by(treat) %>%
-    summarize(m = mean(sales)) %$%
-    m ->
-    dm
-  return(dm[2] - dm[1])
-}
-
-# Generate empirical sampling distribution of marginal effect of treatment
-k <- 2000
-dm1.sdist <- data.frame(dm = replicate(k, sales.diffm(ssize, custs)))
-dm1.sdist %<>% arrange(dm)
-
-# Determine empirical 95% confidence interval
-lt <- dm1.sdist[.025*k,'dm']
-rt <- dm1.sdist[.975*k,'dm']
-
-# Plot sampling distribution
-dm1.sdist %>%
-  ggplot(aes(x = dm)) +
-  geom_density() + 
-  geom_vline(xintercept=mg.sales, color="blue", linetype="dashed") + 
-  geom_vline(xintercept=lt, linetype="dashed") + 
-  geom_vline(xintercept=rt, linetype="dashed")
-```
-
-Note that our 95% confidence interval ($\delta y \in$ [`r lt`, `r rt`]) contains zero. This means that we likely would not want to rule out that our advertising regime has had no effect on sales for the treated customers. This does not seem to be a good use of our resources: this experiment would cost $`r tot.cost(mg.cost, ssize)` to run!  What would it take to tighten up this interval? Let's try adjusting the sample size of our experiment by a factor of 10, to reach 2 million customers:
-
-```{r 3}
-# Generate customers matrix
-ss2 <- 2000000
-custs <- gen_custs(ss2)
-
-# Generate empirical sampling distribution of marginal effect of treatment
-k <- 2000
-dm2.sdist <- data.frame(dm = replicate(k, sales.diffm(ss2, custs)))
-dm2.sdist %<>% arrange(dm)
-
-# Determine empirical 95% confidence interval
-lt <- dm2.sdist[.025*k,'dm']
-rt <- dm2.sdist[.975*k,'dm']
-
-# Plot sampling distribution
-dm2.sdist %>%
-  ggplot(aes(x = dm)) +
-  geom_density() + 
-  geom_vline(xintercept=mg.sales, color="blue", linetype="dashed") + 
-  geom_vline(xintercept=lt, linetype="dashed") + 
-  geom_vline(xintercept=rt, linetype="dashed")
-```
-
-We obtain a 95% confidence interval $\delta y \in$ [`r lt`, `r rt`]. So the tenfold increase in our sample size may have been overkill-- and $`r tot.cost(mg.cost, ss2)` may be a bit more than we're willing to spend on a single advertising campaign. Fortunately, we can analytically determine what sample size we would need to confidently determine whether our experiment reached its expected effect.
+To put it in different terms, the low $R^{2}$ (or more pertinently, the low impact-to-standard-deviation ratio) means that assignment to treatment explains very little of the variance in sales. To have any hope of detecting a significant (say, $p < .05$) effect in the difference in means between our experimental groups, we are going to need to either drive up our sample size or find some way of adjusting either the effectiveness of our advertising or the variance in our marginal sales.
 
 Another way of rephrasing this is: what sample size would enable us to drive up our test statistic $t_{\delta y}$ to a given critical value? For a 95% confidence interval in large samples, this critical value is approximately equal to `r round(qnorm(0.975), 2)`. We compute:
 
@@ -171,32 +177,9 @@ $$
 \end{aligned}
 $$
 
-Note that since we're using a two-sided t-statistic, we need to multiply $N$ by 2 to pin down the sign of the difference in means. To verify that any sample size above this number would provide us with just enough coverage to reject the null hypothesis, we can re-run our simulation with $N$ customers:
+Note that since we're using a two-sided t-statistic, we need to multiply $N$ by 2 to pin down the sign of the difference in means.
 
-```{r 4}
-# Generate customers matrix
-ss3 <- 352800 * 2
-custs <- gen_custs(ss3)
-
-# Generate empirical sampling distribution of marginal effect of treatment
-k <- 2000
-dm3.sdist <- data.frame(dm = replicate(k, sales.diffm(ss3, custs)))
-dm3.sdist %<>% arrange(dm)
-
-# Determine empirical 95% confidence interval
-lt <- dm3.sdist[.025*k,'dm']
-rt <- dm3.sdist[.975*k,'dm']
-
-# Plot sampling distribution
-dm3.sdist %>%
-  ggplot(aes(x = dm)) +
-  geom_density() + 
-  geom_vline(xintercept=mg.sales, color="blue", linetype="dashed") + 
-  geom_vline(xintercept=lt, linetype="dashed") + 
-  geom_vline(xintercept=rt, linetype="dashed")
-```
-
-So our original experiment was underpowered by more than 500k customers-- which is quite a gap! Let's see what we might be able to do with a fixed customer sample size by adjusting our impact-to-standard-deviation ratio. First, we can determine what marginal effect size (that is, marginal sales increase on treatment, $\delta y$) we would need for our customer sample size to work:
+So our original experiment was underpowered by a little more than 500k customers-- which is quite a gap! Let's see what we might be able to do with a fixed customer sample size by adjusting our impact-to-standard-deviation ratio. First, we can determine what marginal effect size (that is, marginal sales increase on treatment, $\delta y$) we would need for our customer sample size to work:
 
 $$
 \begin{aligned}
@@ -221,3 +204,4 @@ $$
 $$
 
 In simpler terms, for our customer sample size $N = 200000$ to work, we would need to increase the average marginal sales for our advertising campaign by approximately \$0.11, or we would need to decrease the variance in our per-customer sales by approximately \$19.
+
